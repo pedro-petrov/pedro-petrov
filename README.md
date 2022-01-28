@@ -1,8 +1,7 @@
 - 👋 Hi, I’m @pedro-petrov
-- 👀 I’m interested in ...
+- 👀 I’m interested in change my career path from Telco to programming.
 - 🌱 I’m currently learning Javascript!
-- 💞️ I’m looking to collaborate on ...
-- 📫 How to reach me ...
+- 📫 You can reach me on my email: petrovonrails@gmail.com
 
 <!---
 pedro-petrov/pedro-petrov is a ✨ special ✨ repository because its `README.md` (this file) appears on your GitHub profile.
