@@ -23,6 +23,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -44,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.pedropetrov.screenlens.ai.Mode
+import com.pedropetrov.screenlens.ai.Tier
 import com.pedropetrov.screenlens.net.DEFAULT_PORT
 import com.pedropetrov.screenlens.ui.MarkdownText
 
@@ -142,6 +144,28 @@ private fun ConnectPanel(vm: ControllerViewModel, state: ControllerState) {
         "Create a key at console.anthropic.com. It is stored only on this phone.",
         style = MaterialTheme.typography.bodySmall,
     )
+    Text("Model", style = MaterialTheme.typography.titleSmall)
+    TierPicker(state.tier, vm::setTier)
+}
+
+@Composable
+private fun TierPicker(selected: Tier, onSelect: (Tier) -> Unit) {
+    Column {
+        Tier.entries.forEach { tier ->
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelect(tier) },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = tier == selected, onClick = { onSelect(tier) })
+                Column {
+                    Text(tier.label, fontWeight = FontWeight.SemiBold)
+                    Text(tier.hint, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -217,12 +241,15 @@ private fun AnswerPanel(vm: ControllerViewModel, state: ControllerState) {
     }
     OutlinedButton(onClick = vm::retake, modifier = Modifier.fillMaxWidth()) { Text("New photo") }
 
-    if (state.askMode) PresentPrompt(vm)
+    if (state.askMode) PresentPrompt(vm, state.tier)
 
     state.turns.forEach { turn ->
         HorizontalDivider()
         Text(turn.question, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         MarkdownText(turn.answer)
+        turn.costNote?.let {
+            Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+        }
     }
     if (state.thinking) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -235,7 +262,7 @@ private fun AnswerPanel(vm: ControllerViewModel, state: ControllerState) {
 }
 
 @Composable
-private fun PresentPrompt(vm: ControllerViewModel) {
+private fun PresentPrompt(vm: ControllerViewModel, tier: Tier) {
     var extra by remember { mutableStateOf("") }
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -246,6 +273,7 @@ private fun PresentPrompt(vm: ControllerViewModel) {
                 label = { Text("Anything specific? (optional)") },
                 modifier = Modifier.fillMaxWidth(),
             )
+            TierPicker(tier, vm::setTier)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Mode.entries.forEach { mode ->
                     Button(onClick = { vm.ask(mode, extra) }, modifier = Modifier.weight(1f)) { Text(mode.label) }

@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.pedropetrov.screenlens.Prefs
 import com.pedropetrov.screenlens.ai.ClaudeTutor
 import com.pedropetrov.screenlens.ai.Mode
+import com.pedropetrov.screenlens.ai.Tier
 import com.pedropetrov.screenlens.net.FoundCamera
 import com.pedropetrov.screenlens.net.NsdBrowser
 import kotlinx.coroutines.CancellationException
@@ -21,7 +22,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-data class Turn(val question: String, val answer: String)
+data class Turn(val question: String, val answer: String, val costNote: String? = null)
 
 data class ControllerState(
     val discovered: List<FoundCamera> = emptyList(),
@@ -38,12 +39,13 @@ data class ControllerState(
     val turns: List<Turn> = emptyList(),
     val thinking: Boolean = false,
     val error: String? = null,
+    val tier: Tier = Tier.ECONOMY,
 )
 
 class ControllerViewModel(app: Application) : AndroidViewModel(app) {
     val prefs = Prefs(app)
 
-    private val _state = MutableStateFlow(ControllerState())
+    private val _state = MutableStateFlow(ControllerState(tier = prefs.tier))
     val state: StateFlow<ControllerState> = _state
 
     private var client: CameraClient? = null
@@ -82,7 +84,7 @@ class ControllerViewModel(app: Application) : AndroidViewModel(app) {
         previewJob?.cancel()
         aiJob?.cancel()
         client = null
-        _state.update { ControllerState(discovered = it.discovered) }
+        _state.update { ControllerState(discovered = it.discovered, tier = it.tier) }
     }
 
     private fun startPreview() {
@@ -152,7 +154,7 @@ class ControllerViewModel(app: Application) : AndroidViewModel(app) {
             _state.update { it.copy(error = "Add your Claude API key in Settings first.") }
             return
         }
-        val t = ClaudeTutor(key).also { tutor = it }
+        val t = ClaudeTutor(key, prefs.tier).also { tutor = it }
         val label = if (extra.isBlank()) mode.label else "${mode.label}: $extra"
         runTurn(label) { onText -> t.start(jpeg, mode, extra, onText) }
     }
@@ -177,12 +179,14 @@ class ControllerViewModel(app: Application) : AndroidViewModel(app) {
                         s.copy(thinking = false, turns = s.turns.dropLast(1) + last.copy(answer = last.answer + delta))
                     }
                 }
+                val note = "≈ $%.4f · %,d in / %,d out tokens".format(outcome.costUsd, outcome.inputTokens, outcome.outputTokens)
                 _state.update { s ->
-                    if (outcome == ClaudeTutor.Outcome.REFUSED) {
-                        s.copy(thinking = false, error = "Claude declined to answer this one. Try another photo or question.")
-                    } else {
-                        s.copy(thinking = false)
-                    }
+                    val last = s.turns.last()
+                    s.copy(
+                        thinking = false,
+                        turns = s.turns.dropLast(1) + last.copy(costNote = note),
+                        error = if (outcome.refused) "Claude declined to answer this one. Try another photo or question." else null,
+                    )
                 }
             } catch (e: CancellationException) {
                 // Superseded by a newer action; nothing to report.
@@ -197,6 +201,11 @@ class ControllerViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+    }
+
+    fun setTier(tier: Tier) {
+        prefs.tier = tier
+        _state.update { it.copy(tier = tier) }
     }
 
     fun dismissError() = _state.update { it.copy(error = null) }

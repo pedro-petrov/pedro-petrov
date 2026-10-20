@@ -35,7 +35,20 @@ Test setup: **Galaxy S24 Ultra = Controller**, **Galaxy S20 Ultra = Camera**.
      the torch on glossy screens because it adds glare.
    - Tap **Capture the screen**. Choose **Solution** or **Explanation** and optionally type what
      you want (for example "explain like I'm a beginner" or "answer in Portuguese").
-   - Read the answer, ask follow-ups, or tap **New photo**.
+   - Read the answer, ask follow-ups, or tap **New photo**. Each answer shows what it cost.
+
+## Cost
+
+Pick a model under *Settings* or on the "What should I show you?" card:
+
+| Option | Model | About per photo |
+|---|---|---|
+| Economy (default) | Claude Haiku 5.5 | 0.2¢ |
+| Balanced | Claude Sonnet 5.5 | 2–3¢ |
+| Best | Claude Opus 5.5 | 6–10¢ |
+
+Other savings built in: photos are sent at 1568 px on the long edge, answers are kept
+short, and the photo is cached so follow-up questions re-read it at a tenth of the price.
 
 ## How it works
 

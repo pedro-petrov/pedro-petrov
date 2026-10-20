@@ -1,6 +1,7 @@
 package com.pedropetrov.screenlens
 
 import android.content.Context
+import com.pedropetrov.screenlens.ai.Tier
 import kotlin.random.Random
 
 /**
@@ -15,6 +16,10 @@ class Prefs(context: Context) {
     var apiKey: String
         get() = sp.getString("api_key", "") ?: ""
         set(value) = sp.edit().putString("api_key", value.trim()).apply()
+
+    var tier: Tier
+        get() = Tier.entries.firstOrNull { it.name == sp.getString("tier", null) } ?: Tier.ECONOMY
+        set(value) = sp.edit().putString("tier", value.name).apply()
 
     var lastHost: String
         get() = sp.getString("last_host", "") ?: ""

@@ -5,6 +5,7 @@ import com.anthropic.client.AnthropicClient
 import com.anthropic.client.okhttp.AnthropicOkHttpClient
 import com.anthropic.helpers.BetaMessageAccumulator
 import com.anthropic.models.beta.messages.BetaBase64ImageSource
+import com.anthropic.models.beta.messages.BetaCacheControlEphemeral
 import com.anthropic.models.beta.messages.BetaContentBlockParam
 import com.anthropic.models.beta.messages.BetaMessageParam
 import com.anthropic.models.beta.messages.BetaOutputConfig
@@ -15,9 +16,10 @@ import com.anthropic.models.beta.messages.MessageCreateParams
 enum class Mode(val label: String, val instruction: String) {
     SOLUTION(
         "Solution",
-        "Give me the SOLUTION for what is shown. If it is a question or exercise, solve it step by step and " +
-            "state the final answer clearly. If it is an error, fault or problem, give a troubleshooting plan: " +
-            "most likely causes first, then numbered steps with what to check after each step.",
+        "Give me the SOLUTION for what is shown. If it is a question or exercise, start with the answer " +
+            "(for multiple choice: the correct option letters), then explain briefly why, and why the other " +
+            "options are wrong in one line each. If it is an error, fault or problem, give a troubleshooting " +
+            "plan: most likely causes first, then numbered steps with what to check after each step.",
     ),
     EXPLANATION(
         "Explanation",
@@ -30,7 +32,7 @@ enum class Mode(val label: String, val instruction: String) {
  * One conversation with Claude about one captured image. Not thread-safe: call
  * [start] and [followUp] one at a time from a background thread.
  */
-class ClaudeTutor(apiKey: String) {
+class ClaudeTutor(apiKey: String, private val tier: Tier) {
     private val client: AnthropicClient = AnthropicOkHttpClient.builder().apiKey(apiKey).build()
 
     // Assistant turns are stored exactly as returned (including thinking blocks),
@@ -65,16 +67,19 @@ class ClaudeTutor(apiKey: String) {
     }
 
     private fun run(onText: (String) -> Unit): Outcome {
-        val params = MessageCreateParams.builder()
-            .model(MODEL)
+        val builder = MessageCreateParams.builder()
+            .model(tier.model)
             .maxTokens(16_000L)
             .system(SYSTEM_PROMPT)
-            .outputConfig(BetaOutputConfig.builder().effort(BetaOutputConfig.Effort.HIGH).build())
-            // If a safety classifier declines, the API retries on a suitable fallback model.
-            .addBeta("server-side-fallback-2026-07-01")
-            .fallbacksDefault()
+            .outputConfig(BetaOutputConfig.builder().effort(tier.effort).build())
+            // Caches the photo so follow-up questions re-read it at a tenth of the price.
+            .cacheControl(BetaCacheControlEphemeral.builder().build())
             .messages(history.toList())
-            .build()
+        if (tier.serverFallback) {
+            // If a safety classifier declines, the API retries on a suitable fallback model.
+            builder.addBeta("server-side-fallback-2026-07-01").fallbacksDefault()
+        }
+        val params = builder.build()
 
         val accumulator = BetaMessageAccumulator.create()
         try {
@@ -93,13 +98,20 @@ class ClaudeTutor(apiKey: String) {
 
         val message = accumulator.message()
         history += message.toParam()
-        return if (message.stopReason().orElse(null) == BetaStopReason.REFUSAL) Outcome.REFUSED else Outcome.DONE
+        val usage = message.usage()
+        val cacheWrite = usage.cacheCreationInputTokens().orElse(0L)
+        val cacheRead = usage.cacheReadInputTokens().orElse(0L)
+        return Outcome(
+            refused = message.stopReason().orElse(null) == BetaStopReason.REFUSAL,
+            inputTokens = usage.inputTokens() + cacheWrite + cacheRead,
+            outputTokens = usage.outputTokens(),
+            costUsd = tier.costUsd(usage.inputTokens(), cacheWrite, cacheRead, usage.outputTokens()),
+        )
     }
 
-    enum class Outcome { DONE, REFUSED }
+    data class Outcome(val refused: Boolean, val inputTokens: Long, val outputTokens: Long, val costUsd: Double)
 
     companion object {
-        const val MODEL = "claude-opus-5-5"
 
         private val SYSTEM_PROMPT = """
             You are ScreenLens, a tutor and troubleshooting assistant. The user pointed a phone camera at a
@@ -109,6 +121,8 @@ class ClaudeTutor(apiKey: String) {
               how to retake the photo (angle, distance, light), then answer as far as the readable part allows.
             - Answer in the language the user writes in. If they only chose a mode, use the language of the
               content in the image.
+            - Be concise: lead with the answer, skip restating the question, and keep it under about 300 words
+              unless the user asks for more.
             - Format for a phone screen: short paragraphs, "##" headings, bullet or numbered lists, **bold**
               for key terms, code in ``` blocks. No tables.
             - For troubleshooting, flag safety risks (electricity, gas, heat, data loss) before the steps.

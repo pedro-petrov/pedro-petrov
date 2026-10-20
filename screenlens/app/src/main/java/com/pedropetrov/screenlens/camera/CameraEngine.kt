@@ -145,6 +145,7 @@ class CameraEngine(private val context: Context) {
 
     companion object {
         private const val PREVIEW_INTERVAL_MS = 150L
-        private const val CAPTURE_MAX_EDGE = 2048
+        // Plenty for reading text, and keeps the photo near 2,000 input tokens.
+        private const val CAPTURE_MAX_EDGE = 1568
     }
 }
